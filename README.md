@@ -27,6 +27,14 @@ cargo install wasm-pack
 3. 「パッケージ化されていない拡張機能を読み込む」をクリック
 4. `extension/` ディレクトリを選択
 
+## Security Considerations
+
+この拡張機能は以下のセキュリティ考慮事項を含みます:
+
+- **`wasm-unsafe-eval` CSP**: Chrome 103+ で Wasm 実行に必須。信頼できるコードのみを含めるよう注意
+- **最小権限**: `storage` と `activeTab` のみを要求
+- **HTTPS のみ**: Google Docs (HTTPS) のみを対象
+
 ## Development Status
 
 現在 Phase 0 完了: ビルド基盤と空拡張の読み込み確認可能。

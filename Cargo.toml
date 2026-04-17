@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2021"
 authors = ["donkomura"]
 license = "MIT"
+description = "Vim-like editing for Google Docs"
+repository = "https://github.com/donkomura/vdocs"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
