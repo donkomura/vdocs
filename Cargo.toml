@@ -4,7 +4,7 @@ members = ["crates/vim_core"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["donkomura"]
 license = "MIT"
 description = "Vim-like editing for Google Docs"
