@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "vdocs - Vim for Google Docs",
+  "version": "0.1.0",
+  "description": "Vim-like editing experience for Google Docs",
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/document/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pkg/*"],
+      "matches": ["https://docs.google.com/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "vdocs"
+  },
+  "permissions": ["storage", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
