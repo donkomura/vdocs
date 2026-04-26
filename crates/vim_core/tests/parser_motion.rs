@@ -1,12 +1,12 @@
-//! Parser の motion / count 系仕様。
+//! Parser specs for motions and count prefixes.
 //!
-//! 各テストは冒頭コメントで「何を保証しているか」を G1〜G5 の
-//! 区分つきで明示する:
-//!   G1. 写像 (入力 → 出力が状態非依存)
-//!   G2. 写像 + 状態遷移
-//!   G3. 結果整合 (操作列の最終状態のみを保証)
-//!   G4. 順序保証 (各ステップの出力順まで保証)
-//!   G5. 境界安全 (不正入力で panic しない)
+//! Every test starts with a one-line comment naming the guarantee it
+//! encodes, using the fixed taxonomy G1..G5:
+//!   G1. Mapping (input -> output is state-independent)
+//!   G2. Mapping + state transition
+//!   G3. Eventual consistency (only the final state of a sequence is asserted)
+//!   G4. Ordered output (per-step output sequence is asserted)
+//!   G5. Boundary safety (malformed or extreme input must not panic)
 
 mod common;
 
@@ -15,8 +15,9 @@ use rstest::rstest;
 use vim_core::command::Direction;
 use vim_core::parser::Parser;
 
-// G1. 単キー motion は状態に依存せず、キーと Direction の対応のみで
-// Move(count=1) を返す。ケース列はこの「写像」の全域を示す。
+// G1. A single-key motion is a state-independent mapping from the key to a
+// Direction, producing Move(count=1). The case list enumerates the full
+// domain of that mapping.
 #[rstest]
 #[case("h", Direction::Left)]
 #[case("j", Direction::Down)]
@@ -30,8 +31,8 @@ fn single_key_maps_to_direction(#[case] key: &str, #[case] dir: Direction) {
     assert_eq!(p.on_key(&k(key)), vec![move_cmd(dir, 1)]);
 }
 
-// G1 の特殊例: shift 修飾付きキー表現への写像。別入力形式だが
-// 保証の形は同じ (状態非依存写像)。
+// G1, special case. Same state-independent mapping shape as above, but the
+// input is expressed with a shift modifier instead of a raw key character.
 #[rstest]
 #[case("$", Direction::LineEnd)]
 #[case("G", Direction::DocEnd)]
@@ -40,10 +41,12 @@ fn shifted_key_maps_to_direction(#[case] key: &str, #[case] dir: Direction) {
     assert_eq!(p.on_key(&shifted(key)), vec![move_cmd(dir, 1)]);
 }
 
-// G1 の例外条項: `0` は pending_count の有無で意味が変わる。
-// (a) pending なし → LineStart
-// (b) pending あり → count の桁として吸収
-// この対比を 1 本で保証する (分けると仕様の対比が読めない)。
+// G1, exception clause. `0` changes meaning depending on whether a count is
+// pending:
+//   (a) no pending count  -> LineStart
+//   (b) pending count set -> absorbed as a digit
+// The two cases are asserted together so the contrast stays visible;
+// splitting them would hide the specification.
 #[test]
 fn zero_is_line_start_or_digit_depending_on_count_context() {
     let mut p = Parser::new();
@@ -54,9 +57,9 @@ fn zero_is_line_start_or_digit_depending_on_count_context() {
     assert_eq!(cmds, vec![move_cmd(Direction::Down, 10)]);
 }
 
-// G4. count prefix は「前半 N-1 入力は空 Vec」「最後の 1 入力で
-// Command が 1 回だけ出る」という順序付き保証。合計だけでなく
-// 途中でリークしないことが本質なので、各ステップで検証する。
+// G4. A count prefix must produce exactly one Command on the final key and
+// nothing on any earlier key. The essential property is no mid-sequence
+// leak, so we assert the output at each step rather than just the total.
 #[rstest]
 #[case("5", "j", 5, Direction::Down)]
 #[case("12", "l", 12, Direction::Right)]
@@ -75,8 +78,8 @@ fn count_prefix_emits_exactly_once_at_final_key(
     assert_eq!(p.on_key(&k(motion)), vec![move_cmd(dir, expected_count)]);
 }
 
-// G3. count は 1 コマンドで消費される。2 回目以降は count=1 に戻る。
-// 「最終状態」のみを検証する結果整合の保証。
+// G3. A count is consumed by one command; the next command falls back to
+// count=1. Only the final state of the sequence is asserted.
 #[test]
 fn count_is_consumed_after_one_command() {
     let mut p = Parser::new();
@@ -87,8 +90,8 @@ fn count_is_consumed_after_one_command() {
     assert_eq!(p.on_key(&k("j")), vec![move_cmd(Direction::Down, 1)]);
 }
 
-// G4. gg は「1 回目の g は空、2 回目の g で DocStart」という
-// 順序付き保証を満たす。途中リーク (1 回目で何か出る) を禁じる。
+// G4. `gg` must emit nothing on the first `g` and DocStart on the second.
+// Asserting the per-step output forbids any leak on the first key.
 #[test]
 fn gg_emits_doc_start_only_on_second_g() {
     let mut p = Parser::new();
@@ -96,9 +99,9 @@ fn gg_emits_doc_start_only_on_second_g() {
     assert_eq!(p.on_key(&k("g")), vec![move_cmd(Direction::DocStart, 1)]);
 }
 
-// G3. g-prefix は非 g キーでキャンセル可能。キャンセル後の状態は
-// フレッシュな Normal と等価 (後続 motion が通常通り動く) ことを
-// 結果整合として保証する。
+// G3. A pending `g` prefix is cancelled by any non-`g` key, and the parser
+// returns to a state equivalent to a fresh Normal: a subsequent motion
+// still works. We assert that equivalence as eventual consistency.
 #[test]
 fn g_prefix_is_cancelled_by_non_g_key() {
     let mut p = Parser::new();
@@ -107,8 +110,8 @@ fn g_prefix_is_cancelled_by_non_g_key() {
     assert_eq!(p.on_key(&k("j")), vec![move_cmd(Direction::Down, 1)]);
 }
 
-// G5. 極端に大きい count を与えても panic せず u32 で飽和する。
-// Wasm の trap を content script に漏らさないための境界安全保証。
+// G5. An excessively large count must not panic; it saturates at u32::MAX.
+// This keeps Wasm traps out of the content script.
 #[test]
 fn count_saturates_without_panic() {
     let mut p = Parser::new();

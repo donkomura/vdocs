@@ -1,9 +1,10 @@
-//! 入力組み立ての雑務を吸収するヘルパ。ここには「保証」は無い。
-//! テスト本体が語る保証がノイズなく読めるようにするためのもの。
+//! Helpers that absorb the boilerplate of building inputs. Nothing here
+//! encodes a guarantee; the point is to keep each test's guarantee
+//! readable without ceremony noise.
 //!
-//! Rust の integration test は各ファイルが独立 crate として
-//! コンパイルされるため、このモジュール内の一部関数はファイル
-//! によっては未使用になる。dead_code を許可しておく。
+//! Rust integration tests compile each file as a separate crate, so some
+//! helpers in this module end up unused depending on which file pulls it
+//! in. Allow dead code so that does not produce warnings.
 #![allow(dead_code)]
 
 use vim_core::command::{Command, Direction};

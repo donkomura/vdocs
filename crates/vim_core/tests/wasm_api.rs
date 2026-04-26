@@ -1,12 +1,12 @@
-//! VimCore の wasm 境界契約 (wire format) を保証する統合テスト。
+//! Integration tests that pin the VimCore wasm boundary
+//! (JSON string in / JSON string out).
 //!
-//! このファイルは Parser の内部仕様ではなく、
-//! JS 側が唯一依存する「JSON 文字列入力 → JSON 文字列出力」の
-//! 契約を固定する。ここが壊れると Phase 2 以降の content.js が
-//! 黙って動かなくなるため、内部リファクタで wire format が
-//! 変わったことを即検出できるようにする。
+//! The JS side depends only on the key names, types, and shape of the
+//! JSON that VimCore returns. No matter how much we refactor the Rust
+//! internals, if the externally visible shape changes the JS silently
+//! breaks. This file exists to detect that regression immediately.
 //!
-//! 保証区分は parser_motion.rs の冒頭コメントを参照 (G1〜G5)。
+//! See the header of parser_motion.rs for the G1..G5 guarantee taxonomy.
 
 use rstest::rstest;
 use serde_json::Value;
@@ -16,11 +16,9 @@ fn parse(s: &str) -> Value {
     serde_json::from_str(s).expect("VimCore must always return valid JSON")
 }
 
-// G1. wire format contract:
-//   Move コマンドは必ず {"type":"Move","direction":<PascalCase>,"count":<u32>}
-//   の 3 フィールド構造で出る。direction は PascalCase、count は数値。
-//   JS 側はこの 3 フィールドにのみ依存して switch するため、
-//   名前やケースが変わったらこのテストで即時検出する。
+// G1. Pins the JSON shape of a Move command. The JS side dispatches on
+// {type, direction, count}, so any rename, case change (PascalCase), or
+// type change in those fields must be caught immediately.
 #[test]
 fn wire_format_of_move_command_is_stable() {
     let mut core = VimCore::new();
@@ -32,9 +30,9 @@ fn wire_format_of_move_command_is_stable() {
     );
 }
 
-// G1. 全 Command バリアントが tag 付き object で出ることを、
-// 代表入力でまとめて保証する。新しい Command を増やしたとき
-// ケースを追加すれば追加漏れを検出できる。
+// G1. Confirms that every Command variant is serialised as a "type"-tagged
+// object, using one representative input per variant. Adding a new Command
+// means adding a case here so a missing tag is detected.
 #[rstest]
 #[case(r#"{"key":"j"}"#, "Move")]
 #[case(r#"{"key":"i"}"#, "InsertModeEnter")]
@@ -54,9 +52,10 @@ fn all_command_variants_serialize_with_type_tag(#[case] input: &str, #[case] exp
     );
 }
 
-// G1. NormalModeEnter は Escape 由来のコマンドで、追加
-// フィールドなしの単独 tag として出る。Insert から Normal へ
-// 戻るフローで JS 側が受け取る最初の合図なので確定しておく。
+// G1. When Escape is pressed in Insert mode, the output is a single bare
+// tag {"type":"NormalModeEnter"} with no extra fields. This is the only
+// signal the JS side uses to detect returning to Normal, so the shape is
+// pinned here.
 #[test]
 fn normal_mode_enter_serializes_as_bare_tag() {
     let mut core = VimCore::new();
@@ -65,9 +64,9 @@ fn normal_mode_enter_serializes_as_bare_tag() {
     assert_eq!(parse(&out), serde_json::json!([{"type":"NormalModeEnter"}]));
 }
 
-// G1. shift 等のモディファイアフラグが JSON 経由で解釈される。
-// JS 側で e.shiftKey を bool で詰めた入力が正しく DocEnd に
-// 写像されることを境界越しで保証する。
+// G1. The shift flag embedded in the JSON input is interpreted across the
+// boundary: shift+g must map to DocEnd. The JS side packs e.shiftKey as a
+// bool, so if this path breaks every shifted key (G, $, ...) stops working.
 #[test]
 fn modifier_flag_is_honored_across_json() {
     let mut core = VimCore::new();
@@ -78,10 +77,9 @@ fn modifier_flag_is_honored_across_json() {
     );
 }
 
-// G4. pending 状態が on_key 呼び出し間で保持される。JS 側は
-// 「5 を送ると空配列が返る」「次の j で Move が出る」という
-// 順序前提で実装するため、この保証が崩れると content.js の
-// キー捕捉ロジックが破綻する。
+// G4. pending_count must survive across on_key calls. The JS side captures
+// keys assuming "5 -> empty array" followed by "j -> Move(count=5)"; if
+// that ordering is violated the count prefix stops working.
 #[test]
 fn pending_count_survives_across_on_key_calls() {
     let mut core = VimCore::new();
@@ -93,9 +91,10 @@ fn pending_count_survives_across_on_key_calls() {
     );
 }
 
-// G2. mode() は on_key の副作用後の状態を文字列で返す。モード
-// インジケータ表示の根拠。"normal" / "insert" のみを返す契約
-// (他の値が混入しないこと) を固定する。
+// G2. mode() returns the current mode as a string reflecting the state
+// after on_key. The return value is restricted to "normal" / "insert";
+// no other value may leak through. This API is the basis for the mode
+// indicator, so the contract is pinned.
 #[test]
 fn mode_reflects_state_after_on_key_sequence() {
     let mut core = VimCore::new();
@@ -108,10 +107,9 @@ fn mode_reflects_state_after_on_key_sequence() {
     assert_eq!(core.mode(), "normal");
 }
 
-// G5. 不正入力時の安全性保証: JSON が壊れていても、欠けていても
-// panic せず "[]" を返す。Wasm で panic すると trap になり、
-// その content script 以降のキー処理が止まるため、境界では必ず
-// 吸収する。
+// G5. Malformed input must not panic; the boundary returns "[]". A panic
+// in Wasm is a trap that halts all subsequent key handling in the content
+// script, so every error must be absorbed at the boundary.
 #[rstest]
 #[case("not json")]
 #[case("")]

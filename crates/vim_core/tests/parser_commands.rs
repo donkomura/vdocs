@@ -1,6 +1,6 @@
-//! Parser の mode / operator / edit 系仕様。
+//! Parser specs for modes, operators, and edit commands.
 //!
-//! 保証区分は parser_motion.rs の冒頭コメントを参照 (G1〜G5)。
+//! See the header of parser_motion.rs for the G1..G5 guarantee taxonomy.
 
 mod common;
 
@@ -10,13 +10,13 @@ use vim_core::command::{Command, Direction, InsertAt, Target};
 use vim_core::mode::Mode;
 use vim_core::parser::Parser;
 
-// G2. Insert モードのライフサイクル全体を 1 シナリオで保証する。
-// (1) エントリキーで InsertModeEnter + mode==Insert
-// (2) Insert 中は任意キーが空 Vec で素通し (コマンド出さない)
-// (3) Escape で NormalModeEnter + mode==Normal
-// 分解すると「素通し後 Escape で戻れない」等のシーケンス抜けを
-// 捕まえられない。3 つのエントリキーは同じライフサイクル仕様な
-// のでパラメタライズ。
+// G2. The full Insert-mode lifecycle is asserted as one scenario:
+//   (1) the entry key emits InsertModeEnter and mode becomes Insert
+//   (2) while in Insert, any key passes through with empty output
+//   (3) Escape emits NormalModeEnter and mode returns to Normal
+// Splitting this into separate tests would miss sequencing bugs such as
+// "pass-through works, but Escape no longer returns to Normal". The three
+// entry keys share the same lifecycle spec, so they are parametrised.
 #[rstest]
 #[case("i", InsertAt::Before)]
 #[case("a", InsertAt::After)]
@@ -39,9 +39,8 @@ fn insert_mode_lifecycle(#[case] enter_key: &str, #[case] at: InsertAt) {
     assert_eq!(p.mode(), Mode::Normal);
 }
 
-// G1 + G4. x は count 付きで Delete Char を発行する。count=1 と
-// count>1 を同一写像として扱う (count prefix が target.count に
-// 載ることも含む)。
+// G1 + G4. `x` emits Delete Char with a count. count=1 and count>1 share
+// the same mapping, and the count prefix must flow into target.count.
 #[rstest]
 #[case(&[], 1)]
 #[case(&["3"], 3)]
@@ -59,11 +58,12 @@ fn x_deletes_characters_with_count(#[case] prefix_keys: &[&str], #[case] expecte
     );
 }
 
-// G4. Line-wise operator (dd/yy) の順序付き仕様:
-// (a) operator 単独は空 Vec (待ち状態)
-// (b) 同じ operator キーが続いたときだけ Line 対象の Command
-// (c) count prefix は target.count に載る
-// 3 条件は 1 体の仕様なので operator ごとに 1 シナリオで全部検証。
+// G4. Ordered spec for line-wise operators (dd / yy):
+//   (a) the operator alone must emit nothing (pending state)
+//   (b) only a second press of the same operator key emits a Line command
+//   (c) a count prefix must flow into target.count
+// The three conditions form a single contract, so each operator is
+// verified in one scenario that covers all of them.
 #[rstest]
 #[case::delete("d", |c| Command::Delete { target: Target::Line { count: c } })]
 #[case::yank("y", |c| Command::Yank { target: Target::Line { count: c } })]
@@ -84,8 +84,9 @@ fn linewise_operator_behaves_as_pair_with_count(
     assert_eq!(p.on_key(&k(op)), vec![make(3)]);
 }
 
-// G3. operator の pending は Escape で確実にクリアされ、後続の
-// motion が副作用なく動くことまで含めて「結果整合」を担保する。
+// G3. A pending operator is reliably cleared by Escape, and a subsequent
+// motion runs with no residual side effect. The eventual-consistency claim
+// covers both the clear and the clean follow-up.
 #[test]
 fn operator_pending_is_cancelled_by_escape() {
     let mut p = Parser::new();
@@ -94,9 +95,9 @@ fn operator_pending_is_cancelled_by_escape() {
     assert_eq!(p.on_key(&k("j")), vec![move_cmd(Direction::Down, 1)]);
 }
 
-// G3. operator の後に不一致なキー (d → j 等) が来た場合、MVP では
-// 「黙って捨てて状態をリセット」する契約。将来 operator+motion を
-// サポートするときこのテストが赤くなって変更に気づける。
+// G3. When an operator is followed by a non-repeat key (e.g. d -> j), the
+// MVP contract is "silently drop and reset state". When we later add
+// operator+motion support, this test will turn red and flag the change.
 #[test]
 fn operator_followed_by_non_repeat_is_silently_dropped() {
     let mut p = Parser::new();
@@ -108,9 +109,9 @@ fn operator_followed_by_non_repeat_is_silently_dropped() {
     assert_eq!(p.on_key(&k("j")), vec![move_cmd(Direction::Down, 1)]);
 }
 
-// G1. p は count をサポートしない (MVP 仕様)。count prefix が
-// あっても無視され、常に Paste After 1 回だけを返す。将来 count
-// を導入するときこのテストが赤くなって気づける。
+// G1. `p` does not support counts in the MVP. A count prefix is ignored
+// and `p` always emits a single Paste After. Adding count support later
+// will turn this red and make the change visible.
 #[test]
 fn paste_ignores_count_prefix_in_mvp() {
     let mut p = Parser::new();
