@@ -15,7 +15,21 @@ make build
 
 ## Install
 
-1. `chrome://extensions` を開く
-2. 「デベロッパー モード」を有効化
-3. 「パッケージ化されていない拡張機能を読み込む」をクリック
-4. `extension/` ディレクトリを選択
+### リリース版からインストール
+
+1. [Releases](https://github.com/donkomura/vdocs/releases) から最新の `vdocs-<tag>.zip` をダウンロード
+2. 任意のディレクトリに展開する（中に `extension/` ディレクトリが含まれる）
+3. `chrome://extensions` を開く
+4. 「デベロッパー モード」を有効化
+5. 「パッケージ化されていない拡張機能を読み込む」をクリック
+6. 展開した `extension/` ディレクトリを選択
+
+> Chrome ウェブストア未配布のため、現在は手動インストールのみ対応。拡張機能を更新する場合は、新しい zip を展開したうえで `chrome://extensions` の「更新」ボタンを押す。
+
+### ローカルビルドからインストール
+
+1. `make build` で `extension/pkg/` を生成
+2. `chrome://extensions` を開く
+3. 「デベロッパー モード」を有効化
+4. 「パッケージ化されていない拡張機能を読み込む」をクリック
+5. `extension/` ディレクトリを選択
