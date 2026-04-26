@@ -1,8 +1,14 @@
 use wasm_bindgen::prelude::*;
 
+pub mod command;
+pub mod mode;
+pub mod parser;
+
+use crate::parser::{Key, Parser};
+
 #[wasm_bindgen]
 pub struct VimCore {
-    mode: String,
+    parser: Parser,
 }
 
 impl Default for VimCore {
@@ -16,26 +22,20 @@ impl VimCore {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            mode: "normal".to_string(),
+            parser: Parser::new(),
         }
     }
 
-    pub fn on_key(&mut self, _key_json: &str) -> String {
-        "[]".to_string()
+    pub fn on_key(&mut self, key_json: &str) -> String {
+        let key: Key = match serde_json::from_str(key_json) {
+            Ok(k) => k,
+            Err(_) => return "[]".to_string(),
+        };
+        let cmds = self.parser.on_key(&key);
+        serde_json::to_string(&cmds).unwrap_or_else(|_| "[]".to_string())
     }
 
     pub fn mode(&self) -> String {
-        self.mode.clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vim_core_creation() {
-        let core = VimCore::new();
-        assert_eq!(core.mode(), "normal");
+        self.parser.mode().as_str().to_string()
     }
 }
