@@ -12,7 +12,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["pkg/*"],
+      "resources": ["pkg/*", "src/*"],
       "matches": ["https://docs.google.com/*"]
     }
   ],
